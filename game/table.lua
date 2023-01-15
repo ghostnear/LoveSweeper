@@ -4,19 +4,43 @@ if Utils == nil then
 end
 
 local MineSweeperTable = {
+    _flagImage = love.graphics.newImage("assets/images/flag.png"),
+    _mineImage = love.graphics.newImage("assets/images/mine.png"),
     _textColor = Utils.createColor(0xAA, 0xAA, 0xAA),
+    _correctColor = Utils.createColor(0x11, 0x77, 0x11),
+    _wrongColor = Utils.createColor(0x77, 0x11, 0x11),
     _backgroundColor = Utils.createColor(0x1F, 0x1F, 0x1F),
     _font = love.graphics.newFont("assets/fonts/ubuntu/Ubuntu-Regular.ttf", 24),
     _foregroundColor = Utils.createColor(0x2F, 0x2F, 0x2F),
     _borderColor = Utils.createColor(0x4F, 0x4F, 0x4F),
+    _flagColor = Utils.createColor(0xAA, 0xAA, 0xAA),
     _highlightedPosition = { x = -1, y = -1 },
     _lineWidth = 3,
     _generated = false,
     _mineCount = 0,
-    _lost = false,
+    _ended = false,
+    _flagTable = {},
     _table = {},
     _size = {}
 }
+
+function MineSweeperTable:reset()
+    -- Random seed for the generator.
+    math.randomseed(os.time())
+
+    -- Create table.
+    for row = 0, self._size.x - 1 do
+        self._table[row] = {}
+        self._flagTable[row] = {}
+        for col = 0, self._size.y - 1 do
+            self._table[row][col] = nil
+            self._flagTable[row][col] = false
+        end
+    end
+
+    self._generated = false
+    self._ended = false
+end
 
 function MineSweeperTable:init(sizeX, sizeY, mineCount)
     -- Save size.
@@ -24,16 +48,7 @@ function MineSweeperTable:init(sizeX, sizeY, mineCount)
     self._size.y = sizeY
     self._mineCount = math.floor(mineCount * sizeX * sizeY)
 
-    -- Random seed for the generator.
-    math.randomseed(os.time())
-
-    -- Create table if correct.
-    for row = 0, self._size.x - 1 do
-        self._table[row] = {}
-        for col = 0, self._size.y - 1 do
-            self._table[row][col] = nil
-        end
-    end
+    self:reset()
 end
 
 function MineSweeperTable:_checkInsideGrid(position)
@@ -87,7 +102,7 @@ function MineSweeperTable:_generateMine()
         y = math.random(self._size.y - 1)
     }
 
-    while self._table[result.x][result.y] == 0 do
+    while self._table[result.x][result.y] == 0 or (result.x == self._highlightedPosition.x and result.y == self._highlightedPosition.y) do
         result = {
             x = math.random(self._size.x - 1),
             y = math.random(self._size.y - 1)
@@ -144,28 +159,61 @@ function MineSweeperTable:_mouseFloodFill(position)
 end
 
 function MineSweeperTable:mousePressed(position, button)
+    -- Losing guards.
+    if self._ended then
+        return
+    end
+
     -- Check highlighting.
     self:mouseMoved(position)
 
-    -- Generate table if not generated.
-    if self._generated == false then
-        self:generateTable()
+    -- If normal click
+    if button == 1 then
+        -- Generate table if not generated.
+        if self._generated == false then
+            self:generateTable()
+        end
+
+        -- Flood fill the area to mark visible positions. SAFE!
+        if self._table[self._highlightedPosition.x][self._highlightedPosition.y] ~= 0 then
+            if not self._flagTable[self._highlightedPosition.x][self._highlightedPosition.y] then
+                self:_mouseFloodFill(self._highlightedPosition)
+            end
+        -- A mine. DEAD!
+        else
+            self._ended = true
+            self._highlightedPosition = {
+                x = -1,
+                y = -1
+            }
+        end
+    -- Right click.
+    elseif button == 2 then
+        if self._table[self._highlightedPosition.x][self._highlightedPosition.y] == nil or self._table[self._highlightedPosition.x][self._highlightedPosition.y] < 9 then
+            self._flagTable[self._highlightedPosition.x][self._highlightedPosition.y] = not self._flagTable[self._highlightedPosition.x][self._highlightedPosition.y]
+        end
     end
 
-    -- Flood fill the area to mark visible positions. SAFE!
-    if self._table[self._highlightedPosition.x][self._highlightedPosition.y] ~= 0 then
-        self:_mouseFloodFill(self._highlightedPosition)
-     -- A mine. DEAD!
-    else
-        self._lost = true
-        self._highlightedPosition = {
-            x = -1,
-            y = -1
-        }
+    local gameEnded = true
+    for row = 0, self._size.x - 1 do
+        for col = 0, self._size.y - 1 do
+            if self._table[row][col] == nil or (self._table[row][col] < 9 and self._table[row][col] > 0) or (self._table[row][col] == 0 and not self._flagTable[row][col]) then
+                gameEnded = false
+            end
+        end
+    end
+
+    if gameEnded then
+        self._ended = true
     end
 end
 
 function MineSweeperTable:mouseMoved(position)
+    -- Losing guards.
+    if self._ended then
+        return
+    end
+
     -- Table is square so let's get the displayed sizes.
     local screenWidth, screenHeight = Utils.getWindowSize()
     local usedScreenSize = math.min(screenWidth, screenHeight)
@@ -186,7 +234,7 @@ function MineSweeperTable:mouseMoved(position)
     self._highlightedPosition = {
         x = math.floor(position.x / usedScreenSize * self._size.x),
         y = math.floor(position.y / usedScreenSize * self._size.y)
-    } 
+    }
 end
 
 function MineSweeperTable:draw()
@@ -207,7 +255,6 @@ function MineSweeperTable:draw()
     )
 
     -- Draw foreground grid.
-    Utils.setDrawColor(self._foregroundColor)
     local rectangleSize = {
         x = usedScreenSize / self._size.x,
         y = usedScreenSize / self._size.y
@@ -216,10 +263,23 @@ function MineSweeperTable:draw()
     love.graphics.setLineWidth(self._lineWidth)
     for row = 0, self._size.x - 1 do
         for col = 0, self._size.y - 1 do
+
             -- Draw the square grids.
             local drawMode = "line"
             if (row == self._highlightedPosition.x and col == self._highlightedPosition.y) or (self._table[row][col] ~= nil and self._table[row][col] >= 10) then
                 drawMode = "fill"
+            end
+
+            if self._ended and self._table[row][col] == 0 then
+                drawMode = "fill"
+
+                if self._flagTable[row][col] then
+                    Utils.setDrawColor(self._correctColor)
+                else
+                    Utils.setDrawColor(self._wrongColor)
+                end
+            else
+                Utils.setDrawColor(self._foregroundColor)
             end
 
             love.graphics.rectangle(
@@ -237,7 +297,7 @@ function MineSweeperTable:draw()
 
                 -- Game is designed for 420 x 420.
                 local text = tostring(self._table[row][col] - 10)
-                local textScale = usedScreenSize / 420
+                local textScale = usedScreenSize / 420 * 15 / math.min(self._size.x, self._size.y)
 
                 love.graphics.print(
                     text,
@@ -245,8 +305,25 @@ function MineSweeperTable:draw()
                     tablePosition.y + (col + 0.5) * rectangleSize.y - self._font:getHeight() / 2 * textScale,
                     0, textScale, textScale
                 )
-                
-                Utils.setDrawColor(self._foregroundColor)
+
+            -- Draw the mine if needed.
+            elseif self._ended and self._table[row][col] == 0 then
+                Utils.setDrawColor(self._flagColor)
+                love.graphics.draw(
+                    self._mineImage,
+                    tablePosition.x + row * rectangleSize.x + rectangleSize.x * (1 - 200 / 300) / 2,
+                    tablePosition.y + col * rectangleSize.y + rectangleSize.y * (1 - 200 / 300) / 2,
+                    0, rectangleSize.x / 300, rectangleSize.y / 300
+                )
+            -- Draw the flag on top if needed.
+            elseif self._flagTable[row][col] == true then
+                Utils.setDrawColor(self._flagColor)
+                love.graphics.draw(
+                    self._flagImage,
+                    tablePosition.x + row * rectangleSize.x + rectangleSize.x * (1 - 512 / 700) / 2,
+                    tablePosition.y + col * rectangleSize.y + rectangleSize.y * (1 - 512 / 700) / 2,
+                    0, rectangleSize.x / 700, rectangleSize.y / 700
+                )
             end
         end
     end
