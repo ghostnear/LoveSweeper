@@ -169,6 +169,10 @@ function MineSweeperTable:mousePressed(position, button)
 
     -- If normal click
     if button == 1 then
+        if self._flagTable[self._highlightedPosition.x][self._highlightedPosition.y] == true then
+            return
+        end
+
         -- Generate table if not generated.
         if self._generated == false then
             self:generateTable()

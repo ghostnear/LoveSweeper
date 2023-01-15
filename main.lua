@@ -1,8 +1,15 @@
 local table = require("game.table")
+local starHandler = require("game.starHandler")
 
 function love.load()
     -- Init a 15x15 table with 15% mines.
-    table:init(10, 10, 0.01)
+    table:init(15, 15, 0.15)
+
+    starHandler:init()
+end
+
+function love.update(dt)
+    starHandler:update(dt)
 end
 
 function love.mousepressed(x, y, button, isTouch, presses)
@@ -24,6 +31,7 @@ end
 
 function love.draw()
     -- Draw background.
+    starHandler:draw()
 
     -- Draw game table.
     table:draw()
