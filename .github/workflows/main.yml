@@ -15,7 +15,7 @@ env:
   APP_VERSION: "1.0.0"
   APP_DESCRIPTION: Implementation of MineSweeper made in Love2D. 
   PRODUCT_NAME: LoveSweeper
-  BUNDLE_ID: com.GhostNear.LoveSweeper
+  BUNDLE_ID: org.GhostNear.LoveSweeper
 
 jobs:
   build-core:
@@ -29,7 +29,7 @@ jobs:
       - name: Build core Love2D package
         uses: love-actions/love-actions-core@v1
         with:
-          build-list: ./conf.lua ./main.lua
+          build-list: ./media/ ./parts/ ./Zframework/ ./conf.lua ./main.lua ./version.lua
           package-path: ${{ env.CORE_LOVE_PACKAGE_PATH }}
       - name: Upload core love package
         uses: actions/upload-artifact@v3
