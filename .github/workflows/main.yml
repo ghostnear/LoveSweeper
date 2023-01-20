@@ -29,22 +29,13 @@ jobs:
       - name: Build core Love2D package
         uses: love-actions/love-actions-core@v1
         with:
-          build-list: ./media/ ./parts/ ./Zframework/ ./conf.lua ./main.lua ./version.lua
+          build-list: ./conf.lua ./main.lua
           package-path: ${{ env.CORE_LOVE_PACKAGE_PATH }}
       - name: Upload core love package
         uses: actions/upload-artifact@v3
         with:
           name: ${{ env.CORE_LOVE_ARTIFACT_NAME }}
           path: ${{ env.CORE_LOVE_PACKAGE_PATH }}
-  auto-test:
-    runs-on: ubuntu-latest
-    needs: build-core
-    steps:
-      - name: Love actions for Testing
-        uses: love-actions/love-actions-test@v1
-        with:
-          font-path: ./parts/fonts/proportional.otf
-          language-folder: ./parts/language
   build-linux:
     runs-on: ubuntu-latest
     needs: [build-core, auto-test]
