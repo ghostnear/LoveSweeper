@@ -1,10 +1,8 @@
 local table = require("game.table")
-local starHandler = require("game.starHandler")
+local starHandler = require("game.stars")
 
 function love.load()
-    -- Init a 15x15 table with 15% mines.
     table:init(15, 15, 0.15)
-
     starHandler:init()
 end
 

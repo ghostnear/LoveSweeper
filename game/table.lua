@@ -15,7 +15,7 @@ local MineSweeperTable = {
     _borderColor = Utils.createColor(0x4F, 0x4F, 0x4F),
     _flagColor = Utils.createColor(0xAA, 0xAA, 0xAA),
     _highlightedPosition = { x = -1, y = -1 },
-    _lineWidth = 3,
+    _lineWidth = 1.5,
     _generated = false,
     _mineCount = 0,
     _ended = false,
@@ -42,20 +42,19 @@ function MineSweeperTable:reset()
     self._ended = false
 end
 
-function MineSweeperTable:init(sizeX, sizeY, mineCount)
-    -- Save size.
+function MineSweeperTable:init(sizeX, sizeY, minePercentage)
     self._size.x = sizeX
     self._size.y = sizeY
-    self._mineCount = math.floor(mineCount * sizeX * sizeY)
+    self._mineCount = math.floor(minePercentage * sizeX * sizeY)
 
     self:reset()
 end
 
-function MineSweeperTable:_checkInsideGrid(position)
+function MineSweeperTable:_checkInsideTable(position)
     return position.x >= 0 and position.y >= 0 and position.x < self._size.x and position.y < self._size.y
 end
 
-function MineSweeperTable:positionToTable(position)
+function MineSweeperTable:coordsToTable(position)
     -- Table is square so let's get the displayed sizes.
     local screenWidth, screenHeight = Utils.getWindowSize()
     local usedScreenSize = math.min(screenWidth, screenHeight)
@@ -82,7 +81,7 @@ function MineSweeperTable:_addMine(position)
                 }
 
                 -- If is writtable.
-                if self:_checkInsideGrid(newPosition) and self._table[newPosition.x][newPosition.y] ~= 0 then
+                if self:_checkInsideTable(newPosition) and self._table[newPosition.x][newPosition.y] ~= 0 then
                     -- Empty spaces should be 0.
                     if self._table[newPosition.x][newPosition.y] == nil then
                         self._table[newPosition.x][newPosition.y] = 0
@@ -121,45 +120,78 @@ function MineSweeperTable:generateTable()
 end
 
 function MineSweeperTable:_mouseFloodFill(position)
+    local tileValue = self:_getValue(position)
+
     -- Stop on already seen positions.
-    if self._table[position.x][position.y] ~= nil and (self._table[position.x][position.y] >= 10 or self._table[position.x][position.y] == 0) then
+    if tileValue ~= nil and (tileValue >= 10 or tileValue == 0) then
         return
     end
 
     -- Empty spaces are 10's.
-    if self._table[position.x][position.y] == nil then
-        self._table[position.x][position.y] = 0
+    if tileValue == nil then
+        tileValue = 0
+        self._table[position.x][position.y] = tileValue
     end
 
     -- Mark space as seen.
-    self._table[position.x][position.y] = self._table[position.x][position.y] + 10
+    self._table[position.x][position.y] = tileValue + 10
+    tileValue = tileValue + 10
     
     -- Check neighbours. Don't propagate if the current position is a number.
-    if self._table[position.x][position.y] == 10 then
-        for offsetX = -1, 1 do
-            for offsetY = -1, 1 do
-                -- Don't infinite loop. Thanks.
-                if offsetX ~= 0 or offsetY ~= 0 then
-                    local newPosition = {
-                        x = position.x + offsetX,
-                        y = position.y + offsetY
-                    }
+    if tileValue ~= 10 then
+        return
+    end
 
-                    -- If is writtable, mark as visible.
-                    if self:_checkInsideGrid(newPosition) and
-                        (self._table[newPosition.x][newPosition.y] == nil or
-                        (self._table[newPosition.x][newPosition.y] ~= 0 and
-                        self._table[newPosition.x][newPosition.y] < 10)) then
-                        self:_mouseFloodFill(newPosition)
-                    end
+    for offsetX = -1, 1 do
+        for offsetY = -1, 1 do
+            -- Don't infinite loop. Thanks.
+            if offsetX ~= 0 or offsetY ~= 0 then
+                local newPosition = {
+                    x = position.x + offsetX,
+                    y = position.y + offsetY
+                }
+
+                -- If is writtable, mark as visible.
+                if self:_checkInsideTable(newPosition) and
+                    (self._table[newPosition.x][newPosition.y] == nil or
+                    (self._table[newPosition.x][newPosition.y] ~= 0 and
+                    self._table[newPosition.x][newPosition.y] < 10)) then
+                    self:_mouseFloodFill(newPosition)
                 end
             end
         end
     end
 end
 
+function MineSweeperTable:_setFlag(position, value)
+    self._flagTable[position.x][position.y] = value
+end
+
+function MineSweeperTable:_getFlag(position)
+    return self._flagTable[position.x][position.y]
+end
+
+function MineSweeperTable:_getValue(position)
+    return self._table[position.x][position.y]
+end
+
+function MineSweeperTable:_checkForGameEnd()
+    local position = { x = 0, y = 0}
+    for row = 0, self._size.x - 1 do
+        for col = 0, self._size.y - 1 do
+            position.x = row
+            position.y = col
+            if   self:_getValue(position) == nil or
+                (self:_getValue(position) < 9 and self:_getValue(position) > 0) or
+                (self:_getValue(position) == 0 and not self:_getFlag(position)) then
+                return false
+            end
+        end
+    end
+    return true
+end
+
 function MineSweeperTable:mousePressed(position, button)
-    -- Losing guards.
     if self._ended then
         return
     end
@@ -167,9 +199,10 @@ function MineSweeperTable:mousePressed(position, button)
     -- Check highlighting.
     self:mouseMoved(position)
 
-    -- If normal click
+    -- Left click.
     if button == 1 then
-        if self._flagTable[self._highlightedPosition.x][self._highlightedPosition.y] == true then
+        -- If there is a flag on the block.
+        if self:_getFlag(self._highlightedPosition) == true then
             return
         end
 
@@ -178,42 +211,29 @@ function MineSweeperTable:mousePressed(position, button)
             self:generateTable()
         end
 
-        -- Flood fill the area to mark visible positions. SAFE!
-        if self._table[self._highlightedPosition.x][self._highlightedPosition.y] ~= 0 then
-            if not self._flagTable[self._highlightedPosition.x][self._highlightedPosition.y] then
-                self:_mouseFloodFill(self._highlightedPosition)
-            end
-        -- A mine. DEAD!
+        if self:_getValue(self._highlightedPosition) ~= 0 then
+            self:_mouseFloodFill(self._highlightedPosition)
         else
             self._ended = true
             self._highlightedPosition = {
                 x = -1,
                 y = -1
             }
+            return
         end
+
     -- Right click.
     elseif button == 2 then
-        if self._table[self._highlightedPosition.x][self._highlightedPosition.y] == nil or self._table[self._highlightedPosition.x][self._highlightedPosition.y] < 9 then
-            self._flagTable[self._highlightedPosition.x][self._highlightedPosition.y] = not self._flagTable[self._highlightedPosition.x][self._highlightedPosition.y]
+        -- Toggle flag.
+        if self:_getValue(self._highlightedPosition) == nil or self:_getValue(self._highlightedPosition) < 9 then
+            self:_setFlag(self._highlightedPosition, not self:_getFlag(self._highlightedPosition))
         end
     end
 
-    local gameEnded = true
-    for row = 0, self._size.x - 1 do
-        for col = 0, self._size.y - 1 do
-            if self._table[row][col] == nil or (self._table[row][col] < 9 and self._table[row][col] > 0) or (self._table[row][col] == 0 and not self._flagTable[row][col]) then
-                gameEnded = false
-            end
-        end
-    end
-
-    if gameEnded then
-        self._ended = true
-    end
+    self._ended = self:_checkForGameEnd()
 end
 
 function MineSweeperTable:mouseMoved(position)
-    -- Losing guards.
     if self._ended then
         return
     end
@@ -223,22 +243,19 @@ function MineSweeperTable:mouseMoved(position)
     local usedScreenSize = math.min(screenWidth, screenHeight)
 
     -- Update input position to local coordonates.
-    position = self:positionToTable(position)
-
-    -- Check if it is outside.
-    if position.x < 0 or position.y < 0 or position.x > usedScreenSize or position.y > usedScreenSize then
-        self._highlightedPosition = {
-            x = -1,
-            y = -1
-        }
-        return
-    end
-
-    -- It is inside.
+    position = self:coordsToTable(position)
     self._highlightedPosition = {
         x = math.floor(position.x / usedScreenSize * self._size.x),
         y = math.floor(position.y / usedScreenSize * self._size.y)
     }
+
+    -- Check if it is outside.
+    if not self:_checkInsideTable(self._highlightedPosition) then
+        self._highlightedPosition = {
+            x = -1,
+            y = -1
+        }
+    end
 end
 
 function MineSweeperTable:draw()
@@ -263,8 +280,7 @@ function MineSweeperTable:draw()
         x = usedScreenSize / self._size.x,
         y = usedScreenSize / self._size.y
     }
-    self._lineWidth = 1.5 * usedScreenSize / 420
-    love.graphics.setLineWidth(self._lineWidth)
+    love.graphics.setLineWidth(self._lineWidth * usedScreenSize / 420)
     for row = 0, self._size.x - 1 do
         for col = 0, self._size.y - 1 do
 
@@ -277,10 +293,9 @@ function MineSweeperTable:draw()
             if self._ended and self._table[row][col] == 0 then
                 drawMode = "fill"
 
+                Utils.setDrawColor(self._wrongColor)
                 if self._flagTable[row][col] then
                     Utils.setDrawColor(self._correctColor)
-                else
-                    Utils.setDrawColor(self._wrongColor)
                 end
             else
                 Utils.setDrawColor(self._foregroundColor)
